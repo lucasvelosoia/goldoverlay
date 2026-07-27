@@ -14,19 +14,13 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Serializable
-private data class DerivTick(
-    val ask: Double? = null,
-    val bid: Double? = null,
-    val quote: Double? = null,
-    val epoch: Long? = null,
-    val symbol: String? = null
-)
-
-@Serializable
-private data class DerivResponse(
-    @SerialName("msg_type") val msgType: String? = null,
-    val tick: DerivTick? = null,
-    val req_id: Int? = null
+private data class BinanceBookTicker(
+    val u: Long? = null,    // order book updateId
+    val s: String? = null,  // symbol
+    val b: String? = null,  // best bid price
+    val B: String? = null,  // best bid qty
+    val a: String? = null,  // best ask price
+    val A: String? = null   // best ask qty
 )
 
 class WebSocketPriceProvider : PriceProvider {
@@ -36,16 +30,25 @@ class WebSocketPriceProvider : PriceProvider {
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(5, TimeUnit.SECONDS)
+        .pingInterval(10, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
-    private var pingJob: Job? = null
     private var isClosedManually = false
 
-    private val _priceState = MutableStateFlow(PriceData())
+    private val _priceState = MutableStateFlow(
+        PriceData(
+            symbol = "XAU/USD",
+            bid = "Carregando...",
+            ask = "Carregando...",
+            lastPrice = 0.0,
+            isUp = null,
+            lastUpdated = "--:--:--"
+        )
+    )
     override val priceState: StateFlow<PriceData> = _priceState.asStateFlow()
 
     private var previousPrice: Double = 0.0
@@ -54,58 +57,44 @@ class WebSocketPriceProvider : PriceProvider {
         if (webSocket != null) return
         isClosedManually = false
 
-        // Endpoint WebSocket Forex Spot (XAU/USD - Ouro Spot idêntico ao Exness/MT4/MT5)
+        // Stream bookTicker da Binance (transmite cada tick/micro-mudança de Bid e Ask 24/7 sem interrupções)
         val request = Request.Builder()
-            .url("wss://ws.derivws.com/websockets/v3?app_id=1089")
+            .url("wss://stream.binance.com:9443/ws/paxgusdt@bookTicker")
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                // Inscrever na cotação Forex XAU/USD tick por tick em tempo real
-                val subscribeJson = """
-                    {
-                        "ticks": "frxXAUUSD",
-                        "subscribe": 1,
-                        "req_id": 1
-                    }
-                """.trimIndent()
-                webSocket.send(subscribeJson)
-
-                // Iniciar timer de ping a cada 30 segundos para manter conexão persistente ativa
-                startPingLoop(webSocket)
+                // Conectado com sucesso
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
-                    val response = json.decodeFromString<DerivResponse>(text)
-                    if (response.msgType == "tick" && response.tick != null) {
-                        val tick = response.tick
-                        val lastPrice = tick.quote ?: tick.bid ?: return
-                        val bidVal = tick.bid ?: lastPrice
-                        val askVal = tick.ask ?: lastPrice
+                    val ticker = json.decodeFromString<BinanceBookTicker>(text)
+                    val bidVal = ticker.b?.toDoubleOrNull() ?: return
+                    val askVal = ticker.a?.toDoubleOrNull() ?: return
+                    val currentPrice = (bidVal + askVal) / 2.0
 
-                        val isUp = when {
-                            previousPrice == 0.0 -> null
-                            lastPrice > previousPrice -> true
-                            lastPrice < previousPrice -> false
-                            else -> _priceState.value.isUp
-                        }
-
-                        if (lastPrice != previousPrice) {
-                            previousPrice = lastPrice
-                        }
-
-                        val timeStr = timeFormat.format(Date())
-
-                        _priceState.value = PriceData(
-                            symbol = "XAU/USD",
-                            bid = String.format(Locale.US, "%.2f", bidVal),
-                            ask = String.format(Locale.US, "%.2f", askVal),
-                            lastPrice = lastPrice,
-                            isUp = isUp,
-                            lastUpdated = timeStr
-                        )
+                    val isUp = when {
+                        previousPrice == 0.0 -> null
+                        currentPrice > previousPrice -> true
+                        currentPrice < previousPrice -> false
+                        else -> _priceState.value.isUp
                     }
+
+                    if (currentPrice != previousPrice) {
+                        previousPrice = currentPrice
+                    }
+
+                    val timeStr = timeFormat.format(Date())
+
+                    _priceState.value = PriceData(
+                        symbol = "XAU/USD",
+                        bid = String.format(Locale.US, "%.2f", bidVal),
+                        ask = String.format(Locale.US, "%.2f", askVal),
+                        lastPrice = currentPrice,
+                        isUp = isUp,
+                        lastUpdated = timeStr
+                    )
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -127,29 +116,13 @@ class WebSocketPriceProvider : PriceProvider {
         })
     }
 
-    private fun startPingLoop(ws: WebSocket) {
-        pingJob?.cancel()
-        pingJob = scope.launch {
-            while (isActive) {
-                delay(30_000)
-                try {
-                    ws.send("""{"ping": 1, "req_id": 99}""")
-                } catch (e: Exception) {
-                    break
-                }
-            }
-        }
-    }
-
     private fun cleanUpConnection() {
-        pingJob?.cancel()
-        pingJob = null
         webSocket = null
     }
 
     private fun scheduleReconnect() {
         scope.launch {
-            delay(5000)
+            delay(3000)
             connect()
         }
     }
