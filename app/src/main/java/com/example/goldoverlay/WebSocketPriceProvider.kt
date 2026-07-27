@@ -14,11 +14,6 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Serializable
-private data class TwelveDataPrice(
-    val price: String? = null
-)
-
-@Serializable
 private data class BinanceTicker(
     @SerialName("b") val bestBid: String? = null,
     @SerialName("a") val bestAsk: String? = null,
@@ -38,7 +33,7 @@ class WebSocketPriceProvider : PriceProvider {
         .pingInterval(5, TimeUnit.SECONDS)
         .build()
 
-    private var webSocket: WebSocket? = null
+    private var activeWebSocket: WebSocket? = null
     private var pollJob: Job? = null
     private var isClosedManually = false
 
@@ -57,15 +52,14 @@ class WebSocketPriceProvider : PriceProvider {
     private var previousPrice: Double = 2645.25
 
     override fun connect() {
-        if (webSocket != null || pollJob != null) return
+        if (activeWebSocket != null || pollJob != null) return
         isClosedManually = false
 
-        // Tentar conectar primeiramente no WebSocket da Binance PAXG (Ouro 24/7 de altíssima frequência)
         val request = Request.Builder()
             .url("wss://stream.binance.com:9443/ws/paxgusdt@ticker")
             .build()
 
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+        activeWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val ticker = json.decodeFromString<BinanceTicker>(text)
@@ -80,14 +74,14 @@ class WebSocketPriceProvider : PriceProvider {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                webSocket = null
+                activeWebSocket = null
                 if (!isClosedManually) {
                     startHttpPollingFallback()
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                webSocket = null
+                activeWebSocket = null
                 if (!isClosedManually) {
                     startHttpPollingFallback()
                 }
@@ -117,12 +111,11 @@ class WebSocketPriceProvider : PriceProvider {
                         }
                     }
                 } catch (e: Exception) {
-                    // Simulação ultra realista de flutuação de ticks Forex se todas as APIs externas falharem
                     val randomDelta = ((-5..5).random() * 0.05)
                     val newPrice = (previousPrice + randomDelta).coerceAtLeast(2500.0)
                     updatePrice(newPrice - 0.15, newPrice + 0.15, newPrice)
                 }
-                delay(1000) // Atualização a cada 1 segundo (tick-by-tick)
+                delay(1000)
             }
         }
     }
@@ -152,7 +145,7 @@ class WebSocketPriceProvider : PriceProvider {
         isClosedManually = true
         pollJob?.cancel()
         pollJob = null
-        webSocket?.close(1000, "Desconectado")
-        webSocket = null
+        activeWebSocket?.close(1000, "Desconectado")
+        activeWebSocket = null
     }
 }
