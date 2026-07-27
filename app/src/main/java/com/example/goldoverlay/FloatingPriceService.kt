@@ -122,15 +122,15 @@ class FloatingPriceService : LifecycleService(), SavedStateRegistryOwner, ViewMo
                 OverlayView(
                     priceData = currentPriceData,
                     onDrag = { dx, dy ->
-                        layoutParams.x += dx.toInt()
-                        layoutParams.y += dy.toInt()
-                        windowManager?.updateViewLayout(this, layoutParams)
+                        this@FloatingPriceService.layoutParams.x += dx.toInt()
+                        this@FloatingPriceService.layoutParams.y += dy.toInt()
+                        windowManager?.updateViewLayout(this, this@FloatingPriceService.layoutParams)
                     },
                     onDragEnd = {
                         OverlayPositionManager.savePosition(
                             context = this@FloatingPriceService,
-                            x = layoutParams.x,
-                            y = layoutParams.y
+                            x = this@FloatingPriceService.layoutParams.x,
+                            y = this@FloatingPriceService.layoutParams.y
                         )
                     },
                     onClose = {
