@@ -15,12 +15,12 @@ import java.util.concurrent.TimeUnit
 
 @Serializable
 private data class BinanceBookTicker(
-    val u: Long? = null,    // order book updateId
-    val s: String? = null,  // symbol
-    val b: String? = null,  // best bid price
-    val B: String? = null,  // best bid qty
-    val a: String? = null,  // best ask price
-    val A: String? = null   // best ask qty
+    val u: Long? = null,
+    val s: String? = null,
+    @SerialName("b") val bestBid: String? = null,
+    @SerialName("B") val bestBidQty: String? = null,
+    @SerialName("a") val bestAsk: String? = null,
+    @SerialName("A") val bestAskQty: String? = null
 )
 
 class WebSocketPriceProvider : PriceProvider {
@@ -70,8 +70,8 @@ class WebSocketPriceProvider : PriceProvider {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val ticker = json.decodeFromString<BinanceBookTicker>(text)
-                    val bidVal = ticker.b?.toDoubleOrNull() ?: return
-                    val askVal = ticker.a?.toDoubleOrNull() ?: return
+                    val bidVal = ticker.bestBid?.toDoubleOrNull() ?: return
+                    val askVal = ticker.bestAsk?.toDoubleOrNull() ?: return
                     val currentPrice = (bidVal + askVal) / 2.0
 
                     val isUp = when {
