@@ -20,6 +20,28 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Cache debug keystore
+      uses: actions/cache@v4
+      with:
+        path: ~/.android/debug.keystore
+        key: debug-keystore-stable-v1
+
+    - name: Create debug keystore if not cached
+      run: |
+        mkdir -p ~/.android
+        if [ ! -f ~/.android/debug.keystore ]; then
+          keytool -genkey -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "Novo keystore gerado e sera cacheado"
+        else
+          echo "Keystore cacheado reutilizado"
+        fi
+
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
@@ -27,7 +49,7 @@ jobs:
       run: chmod +x gradlew || true
 
     - name: Build Debug APK
-      run: gradle assembleDebug --stacktrace
+      run: ./gradlew assembleDebug --stacktrace
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
