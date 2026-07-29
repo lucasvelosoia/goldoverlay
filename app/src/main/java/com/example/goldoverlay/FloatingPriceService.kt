@@ -50,7 +50,7 @@ class FloatingPriceService : LifecycleService(), SavedStateRegistryOwner, ViewMo
         priceProvider = if (mt5Url.isNotBlank()) Mt5PriceProvider(mt5Url) else WebSocketPriceProvider()
 
         startForegroundServiceNotification()
-        priceProvider.connect()
+        try { priceProvider.connect() } catch (_: Exception) {}
         setupOverlayView()
     }
 

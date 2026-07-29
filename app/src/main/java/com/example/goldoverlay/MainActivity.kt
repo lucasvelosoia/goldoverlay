@@ -102,10 +102,12 @@ fun GoldOverlayApp(
 
     fun saveUrl() {
         val trimmed = mt5Url.trim()
-        prefs.edit().putString("mt5_ws_url", trimmed).apply()
-        savedUrl = trimmed
+        val normalized = if (trimmed.isNotBlank()) Mt5PriceProvider.normalizeUrl(trimmed) else ""
+        mt5Url = normalized
+        prefs.edit().putString("mt5_ws_url", normalized).apply()
+        savedUrl = normalized
         keyboardController?.hide()
-        Toast.makeText(context, if (trimmed.isNotBlank()) "URL MT5 salva!" else "Usando Binance (sem URL MT5)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, if (normalized.isNotBlank()) "Salvo: $normalized" else "Usando Binance (sem URL MT5)", Toast.LENGTH_LONG).show()
     }
 
     MaterialTheme {

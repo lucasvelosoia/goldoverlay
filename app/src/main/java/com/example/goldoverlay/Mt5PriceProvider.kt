@@ -20,7 +20,9 @@ private data class Mt5Tick(
     val symbol: String? = null
 )
 
-class Mt5PriceProvider(private val wsUrl: String) : PriceProvider {
+class Mt5PriceProvider(rawUrl: String) : PriceProvider {
+
+    private val wsUrl: String = normalizeUrl(rawUrl)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
@@ -58,7 +60,13 @@ class Mt5PriceProvider(private val wsUrl: String) : PriceProvider {
     }
 
     private fun openWebSocket() {
-        val request = Request.Builder().url(wsUrl).build()
+        val request = try {
+            Request.Builder().url(wsUrl).build()
+        } catch (e: Exception) {
+            _priceState.value = _priceState.value.copy(lastUpdated = "URL inválida")
+            scheduleReconnect()
+            return
+        }
         activeWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 reconnectJob?.cancel()
@@ -125,5 +133,23 @@ class Mt5PriceProvider(private val wsUrl: String) : PriceProvider {
         activeWebSocket?.close(1000, "Desconectado")
         activeWebSocket = null
         scope.cancel()
+    }
+
+    companion object {
+        fun normalizeUrl(url: String): String {
+            var u = url.trim()
+            // Remove esquema http se o usuário colou errado
+            u = u.removePrefix("https://").removePrefix("http://")
+            // Garante esquema ws://
+            if (!u.startsWith("ws://") && !u.startsWith("wss://")) {
+                u = "ws://$u"
+            }
+            // Garante path /ws se o usuário digitou só o IP:porta
+            val afterScheme = u.substringAfter("://")
+            if (!afterScheme.contains("/")) {
+                u = "$u/ws"
+            }
+            return u
+        }
     }
 }
