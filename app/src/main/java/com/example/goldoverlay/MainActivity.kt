@@ -1,6 +1,7 @@
 package com.example.goldoverlay
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -12,12 +13,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,7 +41,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Solicitar permissão de notificação no Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -52,7 +57,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Verificar e solicitar automaticamente a permissão de overlay se ainda não concedida
         if (!PermissionHelper.hasOverlayPermission(this)) {
             PermissionHelper.requestOverlayPermission(this)
         }
@@ -64,7 +68,6 @@ class MainActivity : ComponentActivity() {
             PermissionHelper.requestOverlayPermission(this)
             return
         }
-
         val serviceIntent = Intent(this, FloatingPriceService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
@@ -86,6 +89,25 @@ fun GoldOverlayApp(
     onStartOverlay: () -> Unit,
     onStopOverlay: () -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("gold_overlay_prefs", Context.MODE_PRIVATE)
+
+    var mt5Url by remember {
+        mutableStateOf(prefs.getString("mt5_ws_url", "") ?: "")
+    }
+    var savedUrl by remember {
+        mutableStateOf(prefs.getString("mt5_ws_url", "") ?: "")
+    }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun saveUrl() {
+        val trimmed = mt5Url.trim()
+        prefs.edit().putString("mt5_ws_url", trimmed).apply()
+        savedUrl = trimmed
+        keyboardController?.hide()
+        Toast.makeText(context, if (trimmed.isNotBlank()) "URL MT5 salva!" else "Usando Binance (sem URL MT5)", Toast.LENGTH_SHORT).show()
+    }
+
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -128,7 +150,68 @@ fun GoldOverlayApp(
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(40.dp))
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // VPS MT5 configuration card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Fonte de preços MT5",
+                            color = Color(0xFFFFD700),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "URL WebSocket da VPS (ex: ws://123.45.67.89:8080/ws)",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = mt5Url,
+                            onValueChange = { mt5Url = it },
+                            placeholder = { Text("ws://IP_DA_VPS:8080/ws", color = Color.DarkGray, fontSize = 12.sp) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { saveUrl() }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFFFD700),
+                                unfocusedBorderColor = Color.DarkGray,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = Color(0xFFFFD700)
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (savedUrl.isNotBlank()) "MT5 ativo" else "Fallback: Binance",
+                                color = if (savedUrl.isNotBlank()) Color(0xFF4CAF50) else Color.Gray,
+                                fontSize = 11.sp
+                            )
+                            Button(
+                                onClick = { saveUrl() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700)),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                            ) {
+                                Text("Salvar", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = onStartOverlay,

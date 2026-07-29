@@ -38,12 +38,16 @@ class FloatingPriceService : LifecycleService(), SavedStateRegistryOwner, ViewMo
     private var overlayComposeView: ComposeView? = null
     private lateinit var layoutParams: WindowManager.LayoutParams
 
-    private val priceProvider: PriceProvider = WebSocketPriceProvider()
+    private lateinit var priceProvider: PriceProvider
 
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
+
+        val prefs = getSharedPreferences("gold_overlay_prefs", Context.MODE_PRIVATE)
+        val mt5Url = prefs.getString("mt5_ws_url", "") ?: ""
+        priceProvider = if (mt5Url.isNotBlank()) Mt5PriceProvider(mt5Url) else WebSocketPriceProvider()
 
         startForegroundServiceNotification()
         priceProvider.connect()
